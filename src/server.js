@@ -1,16 +1,14 @@
 //server.js
 
-import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
+require('dotenv/config');
+const express = require('express');
+const cors = require('cors');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-}));
-
+app.use(cors({ origin: '*', }));
+    
 app.use(express.json());
 
 app.get('/api/status', (req, res) => {
