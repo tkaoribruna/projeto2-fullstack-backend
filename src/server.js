@@ -15,7 +15,8 @@ if (!process.env.JWT_SECRET) {
   console.warn('Atenção: JWT_SECRET não definido no .env — rotas protegidas retornarão erro.');
 }
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
+//Somente para este trabalho o CORS deve ficar configurado como global a pedido da professora
+app.use(cors({ origin: '*' }));
 
 app.use(express.json());
 
