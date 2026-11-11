@@ -2,6 +2,7 @@
 
 const bcrypt = require('bcrypt');
 const db = require('../database');
+const jwt = require('jsonwebtoken');//Verificar essa linha
 
 function cpfValido(cpf){
     const digitos = String(cpf).replace(/\D/g, '');
@@ -69,3 +70,134 @@ function validarCadastro(dados = {}){
         dados: { nome, email, cpf, senha}
     };
 }
+
+async function cadastrar(req, res, next){
+    const {campos, dados} = validarCadastro(req.body ?? {});
+    let cliente;
+    let descartarCliente = false;
+
+    if(Object.keys(campos).length > 0){
+        return res.status(400).json({
+            erro: 'Dados inválidos.',
+            campos,
+        });
+    }
+
+    try{
+        const senhaHash = await bcrypt.hash(dados.senha, 10);
+        cliente = await db.connect();
+        await cliente.query('BEGIN');   
+
+        const {rows} = await cliente.query(
+            `INSERT INTO usuarios (nome, email, cpf, senha_hash)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, nome, email`,
+            [dados.nome, dados.email, dados.cpf, senhaHash]
+        );
+
+        const usuario = rows[0];
+
+        await cliente.query(
+            `INSERT INTO categorias (usuario_id, nome, tipo)
+            VALUES ($1, 'salario', 'entrada'),
+            ($1, 'Alimentação', 'saida'),
+            ($1, 'Transporte', 'saida')`,
+            [usuario.id]
+        );
+
+        await cliente.query(
+            `INSERT INTO fontes_destinos (usuario_id, nome, tipo)
+            VALUES ($1, 'Conta corrente', 'conta')`,
+            [usuario.id]
+        );
+
+        await cliente.query('COMMIT');
+
+        return res.status(201).json(usuario);
+
+    } catch (erro){
+
+        if(cliente){
+            try{
+                await cliente.query('ROLLBACK');
+            }catch{
+                descartarCliente = true;
+            }
+        }
+
+        //postgreSQL retorna 23505 quando uma restrição UNIQUE é violada.
+        if(erro.code === '23505'){
+            if(erro.constraint === 'usuarios_email_key'){
+                return res.status(409).json({
+                    erro: 'Cadastro em conflito.',
+                    campos: { email: 'Este e-mail ja está cadastrado.'},
+                });
+            }
+
+            if(erro.constraint === 'usuarios_cpf_key'){
+                return res.status(409).json({
+                    erro: 'Cadastro em conflito',
+                    campos: { cpf: 'Este CPF ja está cadastrado.'},
+                });
+            }
+        }
+
+        return next(erro);
+    } finally{
+            if(cliente){
+                cliente.release(descartarCliente);
+            }
+        }
+
+}
+
+//Estudar esta função
+async function login(req, res, next) {
+    const corpo = req.body ?? {};
+    const email = typeof corpo.email === 'string'
+        ? corpo.email.trim().toLowerCase()
+        : '';
+    const senha = typeof corpo.senha === 'string' ? corpo.senha : '';
+
+    if (!email || !senha || Buffer.byteLength(senha, 'utf8') > 72) {
+        return res.status(400).json({
+            erro: 'Informe um e-mail e uma senha válidos.',
+        });
+    }
+
+    try {
+        const { rows } = await db.query(
+            `SELECT id, nome, email, senha_hash
+             FROM usuarios
+             WHERE email = $1`,
+            [email]
+        );
+
+        const usuario = rows[0];
+
+        if (!usuario || !(await bcrypt.compare(senha, usuario.senha_hash))) {
+            return res.status(401).json({
+                erro: 'E-mail ou senha inválidos.',
+            });
+        }
+
+        const token = jwt.sign(
+            { sub: String(usuario.id) },
+            process.env.JWT_SECRET,
+            { algorithm: 'HS256', expiresIn: '1h' }
+        );
+
+        return res.status(200).json({
+            token,
+            usuario: {
+                id: usuario.id,
+                nome: usuario.nome,
+                email: usuario.email,
+            },
+        });
+    } catch (erro) {
+        return next(erro);
+    }
+}
+
+module.exports = { cadastrar, login};
