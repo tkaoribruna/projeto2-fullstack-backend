@@ -7,6 +7,8 @@ const cors = require('cors');
 const categoriasRoutes = require('./routes/categoriasRoutes');
 const fontes_destinosRoutes = require('./routes/fontes_destinosRoutes');
 const { rotaNaoEncontrada, tratarErros } = require('./middlewares/tratamentodeerros');
+const authRoutes = require('./routes/authRoutes');
+
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -15,8 +17,8 @@ if (!process.env.JWT_SECRET) {
   console.warn('Atenção: JWT_SECRET não definido no .env — rotas protegidas retornarão erro.');
 }
 
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:5173' }));
-
+//Somente para este trabalho o CORS deve ficar configurado como global a pedido da professora
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 app.get('/api/status', (req, res) => {
@@ -27,6 +29,8 @@ app.get('/api/status', (req, res) => {
 
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/fontes-destinos', fontes_destinosRoutes);
+
+app.use('/api/auth', authRoutes);
 
 app.use(rotaNaoEncontrada);
 app.use(tratarErros);
