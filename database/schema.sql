@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS fontes_destinos (
     dia_vencimento SMALLINT CHECK (dia_vencimento BETWEEN 1 AND 31),
     limite NUMERIC(12, 2),
     UNIQUE (usuario_id, nome),
+    CONSTRAINT fontes_destinos_limite_positivo
+        CHECK (limite IS NULL OR limite > 0),
     CHECK (
         tipo <> 'cartao_credito'
         OR (
@@ -34,6 +36,20 @@ CREATE TABLE IF NOT EXISTS fontes_destinos (
         )
     )
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'fontes_destinos_limite_positivo'
+          AND conrelid = 'fontes_destinos'::regclass
+    ) THEN
+        ALTER TABLE fontes_destinos
+            ADD CONSTRAINT fontes_destinos_limite_positivo
+            CHECK (limite IS NULL OR limite > 0);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS lancamentos (
     id SERIAL PRIMARY KEY,
