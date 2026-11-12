@@ -99,10 +99,13 @@ function validarFonteDestino(req, res, next) {
     const lim = Number(String(limite ?? '').replace(',', '.'));
     if (limite === undefined || limite === null || limite === '' || !Number.isFinite(lim) || lim <= 0) {
       campos.limite = 'Informe o limite do cartão (maior que zero).';
-    } else if (lim >= 1e10) {
-      campos.limite = 'Limite fora do intervalo permitido.';
     } else {
-      dados.limite = Math.round(lim * 100) / 100;
+      const limiteArredondado = Math.round(lim * 100) / 100;
+      if (limiteArredondado >= 1e10) {
+        campos.limite = 'Limite fora do intervalo permitido.';
+      } else {
+        dados.limite = limiteArredondado;
+      }
     }
   }
   if (Object.keys(campos).length > 0) {
@@ -130,6 +133,19 @@ router.get('/', async (req, res, next) => {
     res.json(await listar(req.usuarioId));
   } catch (erro) {
     next(erro);
+  }
+});
+
+router.get('/:id', async (req, res, next) => {
+  const id = lerId(req);
+  if (!id) return naoEncontrado(res);
+
+  try {
+    const fonteDestino = await buscarPorId(id, req.usuarioId);
+    if (!fonteDestino) return naoEncontrado(res);
+    return res.json(fonteDestino);
+  } catch (erro) {
+    return next(erro);
   }
 });
 
