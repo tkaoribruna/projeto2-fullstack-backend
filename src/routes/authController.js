@@ -52,7 +52,7 @@ function validarCadastro(dados = {}){
     }
 
     if(!cpfValido(cpf)){
-        campos.cpf = 'Informe o CPF válido';
+        campos.cpf = 'Informe um CPF válido';
     }
 
     if(senha.length < 8 || !/[a-zA-Z]/.test(senha) || !/[0-9]/.test(senha)){
