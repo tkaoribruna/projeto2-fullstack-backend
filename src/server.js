@@ -6,6 +6,7 @@ const cors = require('cors');
 
 const categoriasRoutes = require('./routes/categoriasRoutes');
 const fontes_destinosRoutes = require('./routes/fontes_destinosRoutes');
+const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const { rotaNaoEncontrada, tratarErros } = require('./middlewares/tratamentodeerros');
 const authRoutes = require('./routes/authRoutes');
 
@@ -29,6 +30,7 @@ app.get('/api/status', (req, res) => {
 
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/fontes-destinos', fontes_destinosRoutes);
+app.use('/api/relatorios', relatoriosRoutes);
 
 app.use('/api/auth', authRoutes);
 
