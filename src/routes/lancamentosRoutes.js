@@ -1,5 +1,4 @@
-
-// src/routes/lancamentosRoutes.js
+// lancamentosRoutes.js => Gerencia os lançamentos financeiros pela API.
 
 const { Router } = require('express');
 const { randomUUID } = require('crypto');
@@ -199,13 +198,17 @@ router.get('/', async (req, res, next) => {
         (tipo !== undefined && !['entrada', 'saida'].includes(tipo))) {
       return res.status(400).json({ erro: 'Filtros inválidos.' });
     }
+
     const params = [req.usuarioId];
     const condicoes = ['usuario_id = $1'];
+
     function adicionar(coluna, valor) {
       params.push(valor);
       condicoes.push(`${coluna} = $${params.length}`);
     }
+
     if (tipo) adicionar('tipo', tipo);
+
     for (const [campo, coluna] of [['categoriaId', 'categoria_id'], ['fonteDestinoId', 'fonte_destino_id']]) {
       const valor = req.query[campo];
       if (valor !== undefined) {
@@ -215,36 +218,70 @@ router.get('/', async (req, res, next) => {
         adicionar(coluna, Number(valor));
       }
     }
-    if (inicio) { params.push(inicio); condicoes.push(`data >= $${params.length}`); }
-    if (fim) { params.push(fim); condicoes.push(`data <= $${params.length}`); }
+
+    if (inicio) {
+      params.push(inicio);
+      condicoes.push(`data >= $${params.length}`);
+    }
+
+    if (fim) {
+      params.push(fim);
+      condicoes.push(`data <= $${params.length}`);
+    }
+
     const where = condicoes.join(' AND ');
     const paginar = pagina !== undefined || limite !== undefined;
+
     if (!paginar) {
       const { rows } = await db.query(
-        `SELECT ${COLUNAS} FROM lancamentos WHERE ${where} ORDER BY data DESC, id DESC`, params
+        `SELECT ${COLUNAS} FROM lancamentos WHERE ${where} ORDER BY data DESC, id DESC`,
+        params
       );
       return res.json(rows.map(paraApi));
     }
+
     const numPagina = Number(pagina ?? 1);
     const numLimite = Number(limite ?? 20);
+
     if (!Number.isSafeInteger(numPagina) || numPagina < 1 ||
         !Number.isSafeInteger(numLimite) || numLimite < 1 || numLimite > 100 ||
         !Number.isSafeInteger((numPagina - 1) * numLimite)) {
-      return res.status(400).json({ erro: 'Paginação inválida (pagina >= 1; limite entre 1 e 100).' });
+      return res.status(400).json({
+        erro: 'Paginação inválida (pagina >= 1; limite entre 1 e 100).',
+      });
     }
+
     const { rows: contagem } = await db.query(
-      `SELECT COUNT(*)::int AS total FROM lancamentos WHERE ${where}`, params
+      `SELECT COUNT(*)::int AS total,
+         COALESCE(SUM(valor) FILTER (WHERE tipo = 'entrada'), 0) AS entradas,
+         COALESCE(SUM(valor) FILTER (WHERE tipo = 'saida'), 0) AS saidas,
+         COALESCE(SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE -valor END), 0) AS saldo
+       FROM lancamentos WHERE ${where}`,
+      params
     );
+
     const offset = (numPagina - 1) * numLimite;
     const { rows } = await db.query(
       `SELECT ${COLUNAS} FROM lancamentos WHERE ${where}
        ORDER BY data DESC, id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, numLimite, offset]
     );
-    const total = contagem[0].total;
+
+    const { total, entradas, saidas, saldo } = contagem[0];
+
     return res.json({
       lancamentos: rows.map(paraApi),
-      paginacao: { pagina: numPagina, limite: numLimite, total, totalPaginas: Math.ceil(total / numLimite) },
+      paginacao: {
+        pagina: numPagina,
+        limite: numLimite,
+        total,
+        totalPaginas: Math.ceil(total / numLimite),
+      },
+      totais: {
+        entradas: Number(entradas),
+        saidas: Number(saidas),
+        saldo: Number(saldo),
+      },
     });
   } catch (erro) {
     return next(erro);
@@ -428,16 +465,28 @@ router.put('/:id', validarLancamento, async (req, res, next) => {
   }
 });
 
-// DELETE - Excluir um lançamento individual
+// DELETE - Excluir um lançamento ou todas as parcelas da compra
 router.delete('/:id', async (req, res, next) => {
   const id = lerId(req);
   if (!id) return naoEncontrado(res);
 
+  const excluirTodas = req.query.escopo === 'todas';
+
   try {
     const { rowCount } = await db.query(
-      `DELETE FROM lancamentos
-       WHERE id = $1 AND usuario_id = $2`,
-      [id, req.usuarioId]
+      `DELETE FROM lancamentos AS alvo
+       USING lancamentos AS selecionado
+       WHERE selecionado.id = $1
+         AND selecionado.usuario_id = $2
+         AND alvo.usuario_id = $2
+         AND (
+           alvo.id = selecionado.id
+           OR (
+             $3::boolean
+             AND alvo.grupo_parcelamento = selecionado.grupo_parcelamento
+           )
+         )`,
+      [id, req.usuarioId, excluirTodas]
     );
 
     if (!rowCount) return naoEncontrado(res);
